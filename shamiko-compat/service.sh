@@ -1,6 +1,7 @@
 #!/system/bin/sh
 MODDIR=${0%/*}
 . "$MODDIR/common_props.sh"
+. "$MODDIR/whitelist.sh"
 
 # Attendre la fin du demarrage et des scripts tardifs (Zygisk Assistant / vbmeta-fixer)
 i=0
@@ -13,6 +14,13 @@ sleep 3
 harden_selinux_state
 harden_shamiko_props
 check_zygisk_assistant_state
+sync_shamiko_whitelist
+
+if [ "$WL_MODE" = "ON" ]; then
+  WL_STATUS="Whitelist ON (${WL_COUNT})"
+else
+  WL_STATUS="Whitelist OFF"
+fi
 
 if [ -f "$MODDIR/sepolicy.rule" ]; then
   SEPOL_STATUS="sepolicy OK"
@@ -21,8 +29,8 @@ else
 fi
 
 if [ "$PROP_FAILED" -eq 0 ]; then
-  STATUS="Actif ✅ | ${SEPOL_STATUS} | ${PROP_PRESENT} props verifiees (${PROP_FIXED} corrigees) | SELinux: ${SELINUX_MODE} | Zygisk Assistant: ${ZA_STATE}"
+  STATUS="Actif ✅ | ${WL_STATUS} | ${SEPOL_STATUS} | ${PROP_PRESENT} props (${PROP_FIXED} corrigees) | SELinux: ${SELINUX_MODE} | Zygisk Assistant: ${ZA_STATE}"
 else
-  STATUS="Partiel ⚠️ | ${PROP_FAILED} echec(s) resetprop | Zygisk Assistant: ${ZA_STATE}"
+  STATUS="Partiel ⚠️ | ${WL_STATUS} | ${PROP_FAILED} echec(s) resetprop | Zygisk Assistant: ${ZA_STATE}"
 fi
 update_module_description "$MODDIR" "$STATUS"

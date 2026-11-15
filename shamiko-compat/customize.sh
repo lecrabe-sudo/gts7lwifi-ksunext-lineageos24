@@ -34,12 +34,15 @@ check_root_impl() {
 }
 
 check_companion_stack() {
+  if [ -d /data/adb/modules/zygisk_nohello ] && [ ! -f /data/adb/modules/zygisk_nohello/disable ] && [ ! -f /data/adb/modules/zygisk_nohello/remove ]; then
+    ui_print "! Attention : NoHello (zygisk_nohello) detecte — desinstalle/desactive-le pour eviter les doublons"
+  fi
   if [ -d /data/adb/modules/zygisk-assistant ] && [ ! -f /data/adb/modules/zygisk-assistant/disable ]; then
     ui_print "- Zygisk Assistant detecte et actif (mode compagnon sans conflit)"
   elif [ -d /data/adb/modules/zygisk-assistant ]; then
     ui_print "! Attention : Zygisk Assistant est desactive — pense a le reactiver"
   else
-    ui_print "! Info : Zygisk Assistant absent (ce module applique uniquement sepolicy/resetprop)"
+    ui_print "! Info : Zygisk Assistant absent (ce module applique whitelist/sepolicy/resetprop)"
   fi
 }
 
@@ -67,6 +70,7 @@ for f in \
   module.prop \
   sepolicy.rule \
   common_props.sh \
+  whitelist.sh \
   post-fs-data.sh \
   service.sh \
   action.sh \
@@ -76,12 +80,23 @@ for f in \
 done
 
 set_perm_recursive "$MODPATH" 0 0 0755 0644
-for exec_file in post-fs-data.sh service.sh action.sh cleanup.sh uninstall.sh; do
+for exec_file in whitelist.sh post-fs-data.sh service.sh action.sh cleanup.sh uninstall.sh; do
   set_perm "$MODPATH/$exec_file" 0 0 0755
 done
+
+mkdir -p /data/adb/shamiko_compat
+if [ ! -e /data/adb/shamiko_compat/whitelist ]; then
+  cat << 'EOF' > /data/adb/shamiko_compat/whitelist
+# Liste blanche Shamiko Compat (mode whitelist KernelSU-Next + Zygisk Assistant).
+# Par defaut, toutes les applis non-root ont umount/masquage actif.
+# Ajoute un nom de paquet par ligne ci-dessous pour exempter une appli du masquage
+# (les applis ayant deja le droit root SU ne sont jamais modifiees).
+EOF
+  chmod 0644 /data/adb/shamiko_compat/whitelist
+fi
 
 mkdir -p /data/adb/post-fs-data.d
 cp -f "$MODPATH/cleanup.sh" /data/adb/post-fs-data.d/.shamiko_compat_cleanup.sh
 chmod 0755 /data/adb/post-fs-data.d/.shamiko_compat_cleanup.sh
 
-ui_print "- Pret : redemarre pour activer sepolicy.rule et le durcissement boot"
+ui_print "- Pret : redemarre pour activer sepolicy.rule, whitelist et le durcissement boot"

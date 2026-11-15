@@ -10,7 +10,7 @@ import zipfile
 
 MODULE_DIR = pathlib.Path(__file__).resolve().parent
 REPO_ROOT = MODULE_DIR.parent
-DEFAULT_OUT = pathlib.Path("/mnt/c/tablette/out/Shamiko-Compat-v1.0.0-SM-T870.zip")
+DEFAULT_OUT = pathlib.Path("/mnt/c/tablette/out/Shamiko-Compat-v1.1.0-SM-T870.zip")
 
 PAYLOAD_FILES = [
     "META-INF/com/google/android/update-binary",
@@ -19,6 +19,7 @@ PAYLOAD_FILES = [
     "customize.sh",
     "verify.sh",
     "common_props.sh",
+    "whitelist.sh",
     "post-fs-data.sh",
     "service.sh",
     "action.sh",
@@ -27,7 +28,7 @@ PAYLOAD_FILES = [
     "sepolicy.rule",
 ]
 
-FIXED_ZIP_TIME = (2026, 11, 15, 20, 20, 0)
+FIXED_ZIP_TIME = (2026, 11, 15, 20, 52, 0)
 
 
 def normalize_lf(data: bytes) -> bytes:
@@ -58,7 +59,7 @@ def verify_zip_hashes(zip_path: pathlib.Path) -> None:
 
 def main() -> int:
     out_zip = pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else (
-        DEFAULT_OUT if DEFAULT_OUT.parent.exists() else REPO_ROOT / "out" / "Shamiko-Compat-v1.0.0-SM-T870.zip"
+        DEFAULT_OUT if DEFAULT_OUT.parent.exists() else REPO_ROOT / "out" / "Shamiko-Compat-v1.1.0-SM-T870.zip"
     )
     out_zip.parent.mkdir(parents=True, exist_ok=True)
 
