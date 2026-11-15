@@ -7,10 +7,10 @@ Réglages vérifiés pour la pile active sur la tablette **Samsung Galaxy Tab S7
 ## 1. Gestionnaire KernelSU-Next & fonctions noyau
 
 - **Modules incompatibles à éviter** : ne pas installer `Shamiko v1.2.5 (414)` — son script bloque sur `KSU_KERNEL_VER_CODE >= 20000` (noyau actuel en `33327`).
-- **Pile fonctionnelle recommandée (lot vérifié `integrity/install-modules.bat`)** :
+- **Pile fonctionnelle retenue (lot vérifié `integrity/install-modules.bat`)** :
   - `Zygisk Next` (`1.5.3-880`)
-  - `Zygisk Assistant` (`v2.1.4` release — évite `Shamiko`, incompatible `KSU >= 20000`, et rend `vbmeta-fixer` superflu)
-  - `PlayIntegrityFork` (`v19` — recommandé pour remplacer `Integrity Box v47`, dont `KeyboxLoader`/`KeyboxSource` contacte des sources tierces) ; ne **jamais** activer deux modules PIF en même temps
+  - `Zygisk Assistant` (`v2.1.4` release — évite `Shamiko`, fermé/incompatible `KSU >= 20000`, et rend `vbmeta-fixer` superflu)
+  - `Integrity Box` (`v47`, empreinte officielle `7a2f1bcf…`) — ne **jamais** activer un second module PIF (`PlayIntegrityFork`) en parallèle
   - `Tricky Store` (`v1.4.1`, un seul module)
   - `meta-overlayfs` (`1.3.1`) + modules locaux (`tab-s7-opt`, etc.)
 - **Fonctions noyau (`ksud feature`)** :
