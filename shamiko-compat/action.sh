@@ -13,22 +13,15 @@ if [ "$WL_MODE" = "ON" ]; then
 else
   WL_STATUS="Whitelist OFF"
 fi
-SEPOL_STATUS="sepolicy absent"
-[ -f "$MODDIR/sepolicy.rule" ] && SEPOL_STATUS="sepolicy OK"
 if [ "$PROP_FAILED" -eq 0 ]; then
-  update_module_description "$MODDIR" "Actif ✅ | ${WL_STATUS} | ${SEPOL_STATUS} | ${PROP_PRESENT} props (${PROP_FIXED} corrigees) | SELinux: ${SELINUX_MODE} | Zygisk Assistant: ${ZA_STATE}"
+  update_module_description "$MODDIR" "Actif ✅ | ${WL_STATUS} | ${PROP_PRESENT} props (${PROP_FIXED} corrigees) | SELinux: ${SELINUX_MODE} | Zygisk Assistant: ${ZA_STATE}"
 fi
 
-echo "=== Shamiko Compat v1.1.0 (SM-T870) — Audit ==="
+echo "=== Shamiko Compat v1.1.1 (SM-T870) — Audit ==="
 echo "SELinux         : $SELINUX_MODE"
 echo "Zygisk Assistant: $ZA_STATE"
 echo "Whitelist       : $WL_MODE (exemptes: $WL_COUNT, restaures: $WL_RESTORED, ignores/absents: $WL_SKIPPED, erreurs: $WL_FAILED)"
 echo "Fichier config  : $WHITELIST_FILE"
-if [ -f "$MODDIR/sepolicy.rule" ]; then
-  echo "sepolicy.rule   : present ($(wc -l < "$MODDIR/sepolicy.rule" 2>/dev/null) regles)"
-else
-  echo "sepolicy.rule   : ABSENT"
-fi
 echo "Props presentes : $PROP_PRESENT | corrigees: $PROP_FIXED | echecs: $PROP_FAILED"
 
 echo ""

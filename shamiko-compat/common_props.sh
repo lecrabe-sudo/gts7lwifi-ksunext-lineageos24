@@ -1,4 +1,4 @@
-BASE_DESCRIPTION="Compagnon Shamiko sans doublon Zygisk pour Zygisk Assistant (sepolicy, resetprop, audit SELinux/props)."
+BASE_DESCRIPTION="Compagnon Shamiko sans doublon Zygisk pour Zygisk Assistant (whitelist, resetprop, audit ; sans regle SELinux)."
 
 RESETPROP_BIN="$(command -v resetprop 2>/dev/null || echo /data/adb/ksu/bin/resetprop)"
 

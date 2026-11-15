@@ -1,6 +1,6 @@
 id=shamiko_compat
 name=Shamiko Compat (SM-T870)
-version=v1.1.0
-versionCode=110
+version=v1.1.1
+versionCode=111
 author=custom (SM-T870 / KernelSU-Next)
-description=Compagnon Shamiko sans doublon Zygisk pour Zygisk Assistant (whitelist, sepolicy, resetprop, audit).
+description=Compagnon Shamiko sans doublon Zygisk pour Zygisk Assistant (whitelist, resetprop, audit ; sans regle SELinux).

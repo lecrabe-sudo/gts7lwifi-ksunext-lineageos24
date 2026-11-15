@@ -42,7 +42,7 @@ check_companion_stack() {
   elif [ -d /data/adb/modules/zygisk-assistant ]; then
     ui_print "! Attention : Zygisk Assistant est desactive — pense a le reactiver"
   else
-    ui_print "! Info : Zygisk Assistant absent (ce module applique whitelist/sepolicy/resetprop)"
+    ui_print "! Info : Zygisk Assistant absent (ce module applique whitelist/resetprop)"
   fi
 }
 
@@ -68,7 +68,6 @@ ui_print "- Architecture : $ARCH (API $API)"
 
 for f in \
   module.prop \
-  sepolicy.rule \
   common_props.sh \
   whitelist.sh \
   post-fs-data.sh \
@@ -99,4 +98,4 @@ mkdir -p /data/adb/post-fs-data.d
 cp -f "$MODPATH/cleanup.sh" /data/adb/post-fs-data.d/.shamiko_compat_cleanup.sh
 chmod 0755 /data/adb/post-fs-data.d/.shamiko_compat_cleanup.sh
 
-ui_print "- Pret : redemarre pour activer sepolicy.rule, whitelist et le durcissement boot"
+ui_print "- Pret : redemarre pour activer la whitelist et le durcissement boot (aucune regle SELinux ajoutee)"
