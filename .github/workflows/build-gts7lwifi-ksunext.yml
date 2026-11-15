@@ -1,6 +1,12 @@
 name: Build LineageOS 24 KernelSU-Next (SM-T870 / gts7lwifi)
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/build-gts7lwifi-ksunext.yml"
+      - "ksunext-gts7lwifi/**"
   workflow_dispatch:
     inputs:
       kernel_branch:
@@ -90,17 +96,17 @@ jobs:
           }
 
           clone_ref https://github.com/LineageOS/android_kernel_samsung_sm8250.git \
-            "${{ inputs.kernel_branch }}" "${WORK}/kernel" true
+            "${{ inputs.kernel_branch || 'lineage-24.0' }}" "${WORK}/kernel" true
           # Keep full history and tags for KernelSU-Next so Kbuild computes KSU_VERSION cleanly.
           clone_ref https://github.com/KernelSU-Next/KernelSU-Next.git \
-            "${{ inputs.ksu_ref }}" "${WORK}/KernelSU-Next" false
+            "${{ inputs.ksu_ref || 'legacy' }}" "${WORK}/KernelSU-Next" false
           echo "KernelSU-Next HEAD: $(git -C "${WORK}/KernelSU-Next" rev-parse HEAD) (commits=$(git -C "${WORK}/KernelSU-Next" rev-list --count HEAD))"
 
           git clone --depth=1 \
             https://github.com/osm0sis/AnyKernel3.git \
             "${WORK}/AnyKernel3"
 
-          if [ "${{ inputs.repack_boot_img }}" = "true" ]; then
+          if [ "${{ github.event_name != 'workflow_dispatch' || inputs.repack_boot_img == true }}" = "true" ]; then
             git clone --depth=1 --branch lineage-23.0 \
               https://github.com/LineageOS/android_system_tools_mkbootimg.git \
               "${WORK}/mkbootimg"
@@ -170,7 +176,7 @@ jobs:
           cp "${WORK}/kernel/out/arch/arm64/boot/Image" "${DIST}/Image-gts7lwifi-${TAG}"
 
       - name: Repack latest official LineageOS 24.0 boot.img (optional)
-        if: inputs.repack_boot_img == true
+        if: github.event_name != 'workflow_dispatch' || inputs.repack_boot_img == true
         run: |
           API_JSON="${WORK}/los_builds.json"
           curl -fsSL "https://download.lineageos.org/api/v2/devices/gts7lwifi/builds" -o "${API_JSON}"
@@ -251,6 +257,6 @@ jobs:
           name: "gts7lwifi LineageOS 24.0 + KernelSU-Next (${{ env.BUILD_TAG }})"
           body: |
             Compiled on Ubuntu 24.04 using AOSP Clang r596125 (`clang-22`),
-            `LineageOS/android_kernel_samsung_sm8250` (`${{ inputs.kernel_branch }}`),
-            and `KernelSU-Next` (`${{ inputs.ksu_ref }}`, `CONFIG_KSU_MANUAL_HOOK=y`).
+            `LineageOS/android_kernel_samsung_sm8250` (`${{ inputs.kernel_branch || 'lineage-24.0' }}`),
+            and `KernelSU-Next` (`${{ inputs.ksu_ref || 'legacy' }}`, `CONFIG_KSU_MANUAL_HOOK=y`).
           files: ${{ env.DIST }}/*
