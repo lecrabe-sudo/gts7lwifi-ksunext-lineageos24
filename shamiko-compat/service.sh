@@ -1,0 +1,28 @@
+#!/system/bin/sh
+MODDIR=${0%/*}
+. "$MODDIR/common_props.sh"
+
+# Attendre la fin du demarrage et des scripts tardifs (Zygisk Assistant / vbmeta-fixer)
+i=0
+while [ "$(getprop sys.boot_completed)" != "1" ] && [ "$i" -lt 60 ]; do
+  sleep 1
+  i=$((i + 1))
+done
+sleep 3
+
+harden_selinux_state
+harden_shamiko_props
+check_zygisk_assistant_state
+
+if [ -f "$MODDIR/sepolicy.rule" ]; then
+  SEPOL_STATUS="sepolicy OK"
+else
+  SEPOL_STATUS="sepolicy absent"
+fi
+
+if [ "$PROP_FAILED" -eq 0 ]; then
+  STATUS="Actif ✅ | ${SEPOL_STATUS} | ${PROP_PRESENT} props verifiees (${PROP_FIXED} corrigees) | SELinux: ${SELINUX_MODE} | Zygisk Assistant: ${ZA_STATE}"
+else
+  STATUS="Partiel ⚠️ | ${PROP_FAILED} echec(s) resetprop | Zygisk Assistant: ${ZA_STATE}"
+fi
+update_module_description "$MODDIR" "$STATUS"
