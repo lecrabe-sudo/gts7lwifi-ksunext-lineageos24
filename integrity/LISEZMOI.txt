@@ -4,7 +4,7 @@ LOT PLAY INTEGRITY POUR KERNELSU-NEXT - TABLETTE SM-T870 (gts7lwifi)
 Fichiers (SHA-256 identiques aux releases GitHub officielles) :
   1. Zygisk-Next-1.5.3-880-22a1bf5-release.zip    github.com/Dr-TSNG/ZygiskNext
   2. Zygisk-Assistant-v2.1.4-1013f8a-release.zip  github.com/snake-4/Zygisk-Assistant
-  3. PlayIntegrityFork-v19.zip                    github.com/osm0sis/PlayIntegrityFork
+  3. IntegrityBox-v47.zip                         github.com/MeowDump/Integrity-Box
   4. Tricky-Store-v1.4.1-245-72b2e84-release.zip  github.com/5ec1cff/TrickyStore
 
 Objectif : niveau "Device" de Play Integrity. "Strong" n'est pas vise : il demande
@@ -14,11 +14,12 @@ POURQUOI CE LOT
   - KernelSU n'a pas de Zygisk integre : Zygisk Next est obligatoire.
   - Un seul module "playintegrityfix" a la fois. Integrity Box, PIF [INJECT] et
     Play Integrity Fork portent le meme id : le dernier installe remplace l'autre.
-    Play Integrity Fork est garde car il ne charge pas de keybox depuis des sources tierces.
+    Integrity Box est garde (choix de l'utilisateur, pile validee sur la tablette).
+    Attention : son WebUI peut charger des keybox depuis des sources tierces.
   - Un seul masquage du root : Zygisk Assistant. Shamiko refuse de s'installer
     avec ce kernel (KernelSU-Next 33327 >= 20000) et n'est pas open source.
   - Un seul Tricky Store (5ec1cff). Ne pas installer TrickyStoreOSS en plus.
-  - Non inclus : vbmeta-fixer (inutile ici), playcurlNEXT, Integrity Box.
+  - Non inclus : vbmeta-fixer (inutile ici), playcurlNEXT, Play Integrity Fork.
 
 1) Envoyer les fichiers
    - Tablette branchee en USB, debogage USB active, demande acceptee sur l'ecran.
@@ -26,9 +27,9 @@ POURQUOI CE LOT
      les zips dans Telechargements. Rien n'est installe automatiquement.
 
 2) Installer dans KernelSU-Next > Modules > Installer, DANS CET ORDRE :
-   1. Zygisk Next   2. Zygisk Assistant   3. Play Integrity Fork   4. Tricky Store
+   1. Zygisk Next   2. Zygisk Assistant   3. Integrity Box   4. Tricky Store
    Redemarrer seulement apres le 4e.
-   Si Integrity Box est deja installe : Play Integrity Fork le remplace (meme id).
+   Si Integrity Box est deja installe, il suffit de le garder (meme version v47).
 
 3) Reglages dans KernelSU-Next
    - Parametres : "Demonter les modules par defaut" = active.
@@ -36,7 +37,7 @@ POURQUOI CE LOT
      pas de root, "Demonter les modules" active.
 
 4) Apres redemarrage
-   - Modules > Play Integrity Fork > bouton "Action" (recupere une empreinte a jour).
+   - Modules > Integrity Box > bouton "Action" / WebUI (empreinte a jour).
    - Tester avec "Play Integrity API Checker" : Basic et Device verts, Strong rouge = normal.
    - Si Device reste rouge : vider les donnees de Google Play Services et du Play Store,
      redemarrer, relancer "Action", retester.

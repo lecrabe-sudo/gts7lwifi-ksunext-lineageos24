@@ -5,7 +5,7 @@ title Envoi du lot Play Integrity (KernelSU-Next) vers la tablette
 rem Lot compatible KernelSU-Next pour SM-T870 (ordre d'installation) :
 rem   1. Zygisk Next 1.5.3          (Zygisk pour KernelSU, obligatoire)
 rem   2. Zygisk Assistant 2.1.4     (masquage du root, release)
-rem   3. Play Integrity Fork v19    (id playintegrityfix : remplace Integrity Box / PIF inject)
+rem   3. Integrity Box v47          (id playintegrityfix, MeowDump/Integrity-Box)
 rem   4. Tricky Store 1.4.1         (5ec1cff)
 rem Rien n'est installe ni modifie sur la tablette : les zips sont seulement
 rem copies dans Telechargements. L'installation se fait dans l'appli KernelSU-Next.
@@ -27,7 +27,7 @@ echo.
 rem --- 2. Verifier l'integrite des fichiers (SHA-256 des releases GitHub officielles)
 call :check "Zygisk-Next-1.5.3-880-22a1bf5-release.zip" 186a0a26c9fcb895af1954b42de831433c23d72d1bd0758b986069154359db67 || goto :fail
 call :check "Zygisk-Assistant-v2.1.4-1013f8a-release.zip" 9eca30a269dc676a66f67a9339185dee55cccd47dc1fc8eeea5416124626d67a || goto :fail
-call :check "PlayIntegrityFork-v19.zip" 83b4d5f32743805c5b5a69361d73b8ab9c095325e24f20711afa1abea837b58f || goto :fail
+call :check "IntegrityBox-v47.zip" 7a2f1bcff8f9102510227afd0d91f73636e63cb6a9bf7ed0ef16bb1329775d6a || goto :fail
 call :check "Tricky-Store-v1.4.1-245-72b2e84-release.zip" 2f5e73fcba0e4e43b6e96b38f333cbe394873e3a81cf8fe1b831c2fbd6c46ea9 || goto :fail
 echo Empreintes SHA-256 : OK (4/4)
 echo.
@@ -46,7 +46,7 @@ rem --- 4. Copier les zips dans Telechargements (aucune modification systeme)
 for %%F in (
   "Zygisk-Next-1.5.3-880-22a1bf5-release.zip"
   "Zygisk-Assistant-v2.1.4-1013f8a-release.zip"
-  "PlayIntegrityFork-v19.zip"
+  "IntegrityBox-v47.zip"
   "Tricky-Store-v1.4.1-245-72b2e84-release.zip"
 ) do (
   "%ADB%" push "%~dp0%%~F" /sdcard/Download/ || goto :fail
