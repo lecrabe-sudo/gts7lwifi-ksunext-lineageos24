@@ -8,7 +8,7 @@ Ce dossier contient :
 
 - `.github/workflows/build-gts7lwifi-ksunext.yml` : workflow GitHub Actions compilant le noyau sous Ubuntu `24.04` et empaquetant un zip **AnyKernel3** (+ une image `boot-*-ksunext.img` repaquetée à partir du dernier `boot.img` officiel LineageOS 24.0 + l'APK gestionnaire `KernelSU_Next_*.apk`).
 - `build-local.sh` : script équivalent pour compiler localement sous WSL2 (Ubuntu `24.04`) en déposant le résultat dans `out/`.
-- `ksunext-gts7lwifi/apply_ksu_hooks.py` : intègre `drivers/kernelsu` et applique les 6 hooks manuels (`reboot.c`, `exec.c`, `open.c`, `read_write.c`, `stat.c`, `input.c`).
+- `ksunext-gts7lwifi/apply_ksu_hooks.py` : intègre `drivers/kernelsu`, applique les 6 hooks manuels (`reboot.c`, `exec.c`, `open.c`, `read_write.c`, `stat.c` dont `newfstat`/`fstat64` pour `init.rc`, `input.c`) et les backports (`path_umount`, `seccomp`, `copy_seccomp`).
 - `ksunext-gts7lwifi/ksu.config` : fragment de configuration (`CONFIG_KSU=y`, `CONFIG_KSU_MANUAL_HOOK=y`).
 - `ksunext-gts7lwifi/anykernel.sh` : script d'installation AnyKernel3 ciblant `gts7lwifi` (`/dev/block/by-name/boot`).
 - `.gitignore` : exclut les gros fichiers `.zip` / `.img` de Git pour permettre le push sur GitHub.
@@ -37,7 +37,7 @@ Ce dossier contient :
 - Les dépendances tierces sont **épinglées par commit** : KernelSU-Next `legacy` (`e5f5ec99…`) et AnyKernel3 (`41f04bdb…`). Les actions GitHub sont épinglées par SHA. Le noyau LineageOS suit volontairement la branche `lineage-24.0` pour recevoir les correctifs de sécurité.
 - L'APK gestionnaire est téléchargé depuis une release fixe (`v3.4.2`) et **vérifié par SHA-256**. En cas d'empreinte différente, le build échoue.
 - Le workflow tourne avec `contents: read`. Seul le job `release` (optionnel) a le droit d'écriture.
-- Patch seccomp : sur ce noyau 4.19, le filtre seccomp est **conservé** pour le gestionnaire et les UID autorisés au lieu d'être désactivé. Seul l'appel `reboot`, utilisé par KernelSU, passe outre.
+- Patch seccomp : sur ce noyau 4.19, le filtre seccomp est **conservé** pour le gestionnaire et les UID autorisés au lieu d'être désactivé. Seul l'appel `reboot`, utilisé par KernelSU, passe outre, et `copy_seccomp` remet `ksu_allow_reboot` à zéro dans les processus enfants (`fork`/`clone` hors `CLONE_THREAD`).
 - Pour mettre à jour un épinglage : `git ls-remote <url> <branche>`, relire les changements, puis modifier le SHA dans le workflow **et** dans `build-local.sh`.
 
 ## Installation sur la tablette (`SM-T870`)

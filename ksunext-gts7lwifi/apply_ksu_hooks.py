@@ -246,6 +246,69 @@ def apply_manual_hooks(kernel_dir: Path) -> None:
                     "\tif ((flags &"
                 ),
             ),
+            InsertionRule(
+                marker="extern void ksu_handle_newfstat_ret(",
+                anchor="SYSCALL_DEFINE2(newfstat, unsigned int, fd, struct stat __user *, statbuf)",
+                replacement=(
+                    "#ifdef CONFIG_KSU_MANUAL_HOOK\n"
+                    "extern void ksu_handle_newfstat_ret(unsigned int *fd, struct stat __user **statbuf_ptr);\n"
+                    "#if defined(__ARCH_WANT_STAT64) || defined(__ARCH_WANT_COMPAT_STAT64)\n"
+                    "extern void ksu_handle_fstat64_ret(unsigned long *fd, struct stat64 __user **statbuf_ptr);\n"
+                    "#endif\n"
+                    "#endif\n\n"
+                    "SYSCALL_DEFINE2(newfstat, unsigned int, fd, struct stat __user *, statbuf)"
+                ),
+            ),
+            InsertionRule(
+                marker="ksu_handle_newfstat_ret(&fd, &statbuf);",
+                anchor=(
+                    "SYSCALL_DEFINE2(newfstat, unsigned int, fd, struct stat __user *, statbuf)\n"
+                    "{\n"
+                    "\tstruct kstat stat;\n"
+                    "\tint error = vfs_fstat(fd, &stat);\n\n"
+                    "\tif (!error)\n"
+                    "\t\terror = cp_new_stat(&stat, statbuf);\n\n"
+                    "\treturn error;"
+                ),
+                replacement=(
+                    "SYSCALL_DEFINE2(newfstat, unsigned int, fd, struct stat __user *, statbuf)\n"
+                    "{\n"
+                    "\tstruct kstat stat;\n"
+                    "\tint error = vfs_fstat(fd, &stat);\n\n"
+                    "\tif (!error)\n"
+                    "\t\terror = cp_new_stat(&stat, statbuf);\n\n"
+                    "#ifdef CONFIG_KSU_MANUAL_HOOK\n"
+                    "\tif (!error)\n"
+                    "\t\tksu_handle_newfstat_ret(&fd, &statbuf);\n"
+                    "#endif\n\n"
+                    "\treturn error;"
+                ),
+            ),
+            InsertionRule(
+                marker="ksu_handle_fstat64_ret(&fd, &statbuf);",
+                anchor=(
+                    "SYSCALL_DEFINE2(fstat64, unsigned long, fd, struct stat64 __user *, statbuf)\n"
+                    "{\n"
+                    "\tstruct kstat stat;\n"
+                    "\tint error = vfs_fstat(fd, &stat);\n\n"
+                    "\tif (!error)\n"
+                    "\t\terror = cp_new_stat64(&stat, statbuf);\n\n"
+                    "\treturn error;"
+                ),
+                replacement=(
+                    "SYSCALL_DEFINE2(fstat64, unsigned long, fd, struct stat64 __user *, statbuf)\n"
+                    "{\n"
+                    "\tstruct kstat stat;\n"
+                    "\tint error = vfs_fstat(fd, &stat);\n\n"
+                    "\tif (!error)\n"
+                    "\t\terror = cp_new_stat64(&stat, statbuf);\n\n"
+                    "#ifdef CONFIG_KSU_MANUAL_HOOK\n"
+                    "\tif (!error)\n"
+                    "\t\tksu_handle_fstat64_ret(&fd, &statbuf);\n"
+                    "#endif\n\n"
+                    "\treturn error;"
+                ),
+            ),
         ],
         "drivers/input/input.c": [
             InsertionRule(
@@ -370,6 +433,24 @@ def apply_prebuild_backports(kernel_dir: Path) -> None:
                     "\t\treturn 0;\n"
                     "#endif\n\n"
                     "\tfilter_ret = seccomp_run_filters(sd, &match);"
+                ),
+            ),
+        ],
+        "kernel/fork.c": [
+            InsertionRule(
+                marker="p->seccomp.ksu_allow_reboot = false;",
+                anchor=(
+                    "\tget_seccomp_filter(current);\n"
+                    "\tp->seccomp = current->seccomp;"
+                ),
+                replacement=(
+                    "\tget_seccomp_filter(current);\n"
+                    "\tp->seccomp = current->seccomp;\n"
+                    "#if defined(CONFIG_KSU) && defined(CONFIG_KSU_MANUAL_HOOK)\n"
+                    "\t/* Reset reboot(2) supercall bypass in child processes; preserve for CLONE_THREAD. */\n"
+                    "\tif (p->group_leader == p)\n"
+                    "\t\tp->seccomp.ksu_allow_reboot = false;\n"
+                    "#endif"
                 ),
             ),
         ],
