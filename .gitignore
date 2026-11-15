@@ -11,3 +11,6 @@ out/
 work/
 __pycache__/
 *.pyc
+
+# Sauvegardes de la tablette (EFS = identifiants uniques, ne JAMAIS publier)
+backup/
