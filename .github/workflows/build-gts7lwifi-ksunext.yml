@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - "harden/**"   # test builds of hardening branches (no sign-in needed to trigger)
     paths:
       - ".github/workflows/build-gts7lwifi-ksunext.yml"
       - "ksunext-gts7lwifi/**"
