@@ -1,0 +1,38 @@
+INSTALLER PLAY INTEGRITY FORK + TRICKY STORE SUR LA TABLETTE (SM-T870)
+======================================================================
+
+Fichiers (verifies, SHA-256 identiques a ceux de GitHub) :
+  PlayIntegrityFork-v19.zip                       github.com/osm0sis/PlayIntegrityFork
+  Tricky-Store-v1.4.1-245-72b2e84-release.zip     github.com/5ec1cff/TrickyStore
+
+Objectif : obtenir le niveau "Device" de Play Integrity. Le niveau "Strong" n'est pas
+vise : il demande un keybox materiel valide, que ces modules ne fournissent pas.
+Le keybox.xml present dans Tricky Store est la cle logicielle de test d'Android (AOSP).
+
+1) Envoyer les fichiers
+   - Branche la tablette en USB, debogage USB active, accepte la demande sur son ecran.
+   - Double-clique sur install-modules.bat. Il verifie les empreintes, copie les 2 zips
+     dans Telechargements sur la tablette et indique quel root est installe.
+   - Sans le script : copie les 2 zips a la main dans Telechargements.
+
+2) Zygisk (obligatoire pour Play Integrity Fork)
+   - Magisk : Parametres > activer Zygisk. (Magisk 31.1 ou plus recent sur Android 17.)
+   - KernelSU / KernelSU-Next / APatch : il faut d'abord un module Zygisk
+     (par exemple Zygisk Next). Dis-le moi et je te le prepare.
+
+3) Installer, dans cet ordre, depuis l'application de root > Modules > Installer
+   depuis le stockage :
+   a) PlayIntegrityFork-v19.zip
+   b) Tricky-Store-v1.4.1-245-72b2e84-release.zip
+   Ne redemarre qu'apres le 2e module.
+
+4) Redemarrer la tablette. Puis, dans l'application de root, appuyer sur le bouton
+   "Action" du module Play Integrity Fork (il recupere une empreinte a jour).
+
+5) Verifier avec une application de test Play Integrity (ex. "Play Integrity API Checker") :
+   - Basic et Device doivent etre verts. Strong rouge est normal.
+   - Si Device reste rouge : vider les donnees de Google Play Services et du Play Store,
+     redemarrer, relancer "Action" de PIF, retester.
+
+Retour en arriere : desactiver ou desinstaller les 2 modules dans l'application de root
+puis redemarrer. Rien d'autre n'est modifie.

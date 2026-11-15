@@ -31,7 +31,7 @@ def apply_rules(path: Path, rules: list[InsertionRule]) -> None:
                 f"{path}: expected {rule.count} occurrence(s) of anchor "
                 f"{rule.anchor!r}, found {occurrences}"
             )
-        content = content.replace(rule.anchor, rule.replacement, 1)
+        content = content.replace(rule.anchor, rule.replacement, rule.count)
 
     if content != original:
         path.write_text(content, encoding="utf-8")
@@ -97,6 +97,29 @@ def setup_kernelsu_tree(kernel_dir: Path, ksu_dir: Path) -> None:
             "-Wno-unused-function -Wno-unused-variable\n"
         )
         kbuild_path.write_text(kbuild_text + addition, encoding="utf-8")
+
+    # On 4.19 kernels without 5.10's seccomp action_cache, keep SECCOMP_MODE_FILTER
+    # active for the manager and allowed UIDs and permit only __NR_reboot instead
+    # of stripping seccomp entirely.
+    apply_rules(
+        target / "hook" / "setuid_hook.c",
+        [
+            InsertionRule(
+                marker="current->seccomp.ksu_allow_reboot = true;",
+                anchor="#else\n\t\tdisable_seccomp();\n#endif",
+                replacement=(
+                    "#elif defined(CONFIG_SECCOMP_FILTER)\n"
+                    "        if (current->seccomp.mode == SECCOMP_MODE_FILTER) {\n"
+                    "            current->seccomp.ksu_allow_reboot = true;\n"
+                    "        }\n"
+                    "#else\n"
+                    "\t\tdisable_seccomp();\n"
+                    "#endif"
+                ),
+                count=2,
+            )
+        ],
+    )
 
 
 def apply_manual_hooks(kernel_dir: Path) -> None:
@@ -322,6 +345,32 @@ def apply_prebuild_backports(kernel_dir: Path) -> None:
                 marker="atomic_t filter_count;",
                 anchor="struct seccomp {\n\tint mode;",
                 replacement="struct seccomp {\n\tint mode;\n\tatomic_t filter_count;",
+            ),
+            InsertionRule(
+                marker="bool ksu_allow_reboot;",
+                anchor="struct seccomp {\n\tint mode;",
+                replacement="struct seccomp {\n\tint mode;\n\tbool ksu_allow_reboot;",
+            ),
+        ],
+        "kernel/seccomp.c": [
+            InsertionRule(
+                marker="current->seccomp.ksu_allow_reboot",
+                anchor="\trmb();\n\n\tfilter_ret = seccomp_run_filters(sd, &match);",
+                replacement=(
+                    "\trmb();\n\n"
+                    "#if defined(CONFIG_KSU) && defined(CONFIG_KSU_MANUAL_HOOK)\n"
+                    "\tif (unlikely(current->seccomp.ksu_allow_reboot &&\n"
+                    "#ifdef CONFIG_COMPAT\n"
+                    "\t\t     (in_compat_syscall() ? this_syscall == 88 :\n"
+                    "\t\t\t\t\t    this_syscall == __NR_reboot)\n"
+                    "#else\n"
+                    "\t\t     this_syscall == __NR_reboot\n"
+                    "#endif\n"
+                    "\t\t     ))\n"
+                    "\t\treturn 0;\n"
+                    "#endif\n\n"
+                    "\tfilter_ret = seccomp_run_filters(sd, &match);"
+                ),
             ),
         ],
     }

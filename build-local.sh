@@ -22,7 +22,13 @@ set -euo pipefail
 # --- Réglages (modifiables) ------------------------------------------
 PROJECT_WIN="/mnt/c/tablette"          # dossier C:\tablette vu depuis WSL
 KERNEL_BRANCH="lineage-24.0"           # branche de android_kernel_samsung_sm8250
-KSU_REF="legacy"                        # branche KernelSU-Next (legacy = 4.19 non-GKI)
+# Dépendances tierces épinglées (mêmes valeurs que le workflow GitHub Actions).
+# Pour mettre à jour : git ls-remote <url> <branche>, relire le diff, puis changer le SHA.
+KSU_REF="e5f5ec998de88b9fc43c62cff8f7ae12d3f4800a"   # KernelSU-Next, branche legacy (4.19 non-GKI)
+AK3_COMMIT="41f04bdb4ee30a44e429c2c1131d5e8bb32b15f1" # osm0sis/AnyKernel3
+KSU_MANAGER_TAG="v3.4.2"
+KSU_MANAGER_APK="KernelSU_Next_v3.4.2_33355-release.apk"
+KSU_MANAGER_SHA256="774a5511f7034a4930e881114e202319cbdc34c5aaaa5c7c6b6d2902364e4c58"
 WORK="${HOME}/gts7lwifi-build"          # on compile sur ext4 (~), PAS sur /mnt/c (lent)
 CLANG_TAG="android-17.0.0_r1"
 CLANG_PKG="clang-r596125"
@@ -79,8 +85,22 @@ clone_ref() {  # url ref dest [shallow=true|false]
 log "Clonage du noyau, KernelSU-Next, AnyKernel3, mkbootimg"
 clone_ref https://github.com/LineageOS/android_kernel_samsung_sm8250.git "${KERNEL_BRANCH}" "${WORK}/kernel" true
 clone_ref https://github.com/KernelSU-Next/KernelSU-Next.git            "${KSU_REF}"       "${WORK}/KernelSU-Next" false
+clone_ref https://github.com/osm0sis/AnyKernel3.git                    "${AK3_COMMIT}"    "${WORK}/AnyKernel3" true
+
+# Un clone déjà présent (build précédent) peut être sur un autre commit :
+# on force le commit épinglé, puis on vérifie.
+pin_commit() {  # dest sha
+  local dest="$1" sha="$2"
+  if [ "$(git -C "${dest}" rev-parse HEAD)" != "${sha}" ]; then
+    log "Passage de ${dest} sur le commit épinglé ${sha}"
+    git -C "${dest}" fetch --tags origin "${sha}"
+    git -C "${dest}" checkout --detach "${sha}"
+  fi
+  [ "$(git -C "${dest}" rev-parse HEAD)" = "${sha}" ] || die "${dest} n'est pas sur ${sha}"
+}
+pin_commit "${WORK}/KernelSU-Next" "${KSU_REF}"
+pin_commit "${WORK}/AnyKernel3"    "${AK3_COMMIT}"
 echo "KernelSU-Next HEAD: $(git -C "${WORK}/KernelSU-Next" rev-parse HEAD) (commits=$(git -C "${WORK}/KernelSU-Next" rev-list --count HEAD))"
-[ -d "${WORK}/AnyKernel3/.git" ] || git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git "${WORK}/AnyKernel3"
 [ -d "${WORK}/mkbootimg/.git" ] || git clone --depth=1 --branch lineage-23.0 \
   https://github.com/LineageOS/android_system_tools_mkbootimg.git "${WORK}/mkbootimg"
 
@@ -153,16 +173,14 @@ echo "Taille boot repack : ${BOOT_SIZE} octets (max partition : 71303168)"
 
 # --- 8. Téléchargement optionnel de l'APK gestionnaire ----------------
 SUM_FILES=("${AK3_ZIP}" "${OUT_BOOT_NAME}")
-REL_JSON="${WORK}/ksu_latest_release.json"
-if curl -fsSL "https://api.github.com/repos/KernelSU-Next/KernelSU-Next/releases/latest" -o "${REL_JSON}"; then
-  APK_URL="$(jq -r '
-    [.assets[] | select((.name | endswith(".apk")) and (.name | contains("spoofed") | not))][0].browser_download_url
-    // [.assets[] | select(.name | endswith(".apk"))][0].browser_download_url
-    // empty
-  ' "${REL_JSON}")"
-  if [ -n "${APK_URL}" ] && curl -fsSL "${APK_URL}" -o "${DIST}/$(basename "${APK_URL}")"; then
-    SUM_FILES+=("$(basename "${APK_URL}")")
-  fi
+log "APK gestionnaire ${KSU_MANAGER_TAG} (vérification SHA-256)"
+APK_TMP="${WORK}/${KSU_MANAGER_APK}"
+if curl -fsSL "https://github.com/KernelSU-Next/KernelSU-Next/releases/download/${KSU_MANAGER_TAG}/${KSU_MANAGER_APK}" -o "${APK_TMP}"; then
+  echo "${KSU_MANAGER_SHA256}  ${APK_TMP}" | sha256sum -c - || die "Empreinte de l'APK gestionnaire incorrecte : fichier refusé"
+  cp "${APK_TMP}" "${DIST}/${KSU_MANAGER_APK}"
+  SUM_FILES+=("${KSU_MANAGER_APK}")
+else
+  echo "APK gestionnaire non téléchargé (hors ligne ?) : installe-le à la main depuis la release ${KSU_MANAGER_TAG}."
 fi
 
 # --- 9. Sommes de contrôle -------------------------------------------

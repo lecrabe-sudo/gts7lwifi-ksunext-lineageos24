@@ -32,6 +32,14 @@ Ce dossier contient :
    - `boot-lineage24-...-gts7lwifi-ksunext.img` (image boot complète repaquetée)
    - `KernelSU_Next_*.apk` (application gestionnaire récupérée automatiquement, pour que l'artefact soit complet)
 
+## Sécurité de la chaîne de compilation
+
+- Les dépendances tierces sont **épinglées par commit** : KernelSU-Next `legacy` (`e5f5ec99…`) et AnyKernel3 (`41f04bdb…`). Les actions GitHub sont épinglées par SHA. Le noyau LineageOS suit volontairement la branche `lineage-24.0` pour recevoir les correctifs de sécurité.
+- L'APK gestionnaire est téléchargé depuis une release fixe (`v3.4.2`) et **vérifié par SHA-256**. En cas d'empreinte différente, le build échoue.
+- Le workflow tourne avec `contents: read`. Seul le job `release` (optionnel) a le droit d'écriture.
+- Patch seccomp : sur ce noyau 4.19, le filtre seccomp est **conservé** pour le gestionnaire et les UID autorisés au lieu d'être désactivé. Seul l'appel `reboot`, utilisé par KernelSU, passe outre.
+- Pour mettre à jour un épinglage : `git ls-remote <url> <branche>`, relire les changements, puis modifier le SHA dans le workflow **et** dans `build-local.sh`.
+
 ## Installation sur la tablette (`SM-T870`)
 
 1. Installez d'abord LineageOS 24.0 + `vbmeta.img` + `dtbo.img` + `recovery.img` selon le guide officiel LineageOS pour `gts7lwifi`.

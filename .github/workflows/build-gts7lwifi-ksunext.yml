@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - "harden/**"   # test builds of hardening branches (no sign-in needed to trigger)
     paths:
       - ".github/workflows/build-gts7lwifi-ksunext.yml"
       - "ksunext-gts7lwifi/**"
@@ -15,9 +16,12 @@ on:
         default: "lineage-24.0"
         type: string
       ksu_ref:
-        description: "KernelSU-Next branch/tag (use legacy for 4.19 non-GKI kernels)"
+        # Pinned to a reviewed commit of the `legacy` branch (4.19 non-GKI) so a
+        # compromised or broken upstream push cannot silently land in the kernel.
+        # Bump deliberately: git ls-remote https://github.com/KernelSU-Next/KernelSU-Next.git refs/heads/legacy
+        description: "KernelSU-Next commit SHA (or branch/tag) - default is a pinned legacy commit"
         required: true
-        default: "legacy"
+        default: "e5f5ec998de88b9fc43c62cff8f7ae12d3f4800a"
         type: string
       repack_boot_img:
         description: "Also repack latest official LineageOS 24.0 boot.img with the compiled kernel"
@@ -30,17 +34,31 @@ on:
         default: false
         type: boolean
 
+# Least privilege: the build only reads the repo. Only the optional `release`
+# job below gets write access.
 permissions:
-  contents: write
+  contents: read
+
+env:
+  # Third-party pins (bump deliberately, after review).
+  KSU_DEFAULT_REF: "e5f5ec998de88b9fc43c62cff8f7ae12d3f4800a"   # KernelSU-Next legacy
+  AK3_COMMIT: "41f04bdb4ee30a44e429c2c1131d5e8bb32b15f1"        # osm0sis/AnyKernel3 master
+  KSU_MANAGER_TAG: "v3.4.2"
+  KSU_MANAGER_APK: "KernelSU_Next_v3.4.2_33355-release.apk"
+  KSU_MANAGER_SHA256: "774a5511f7034a4930e881114e202319cbdc34c5aaaa5c7c6b6d2902364e4c58"
 
 jobs:
   build:
     name: Build gts7lwifi LineageOS 24.0 + KernelSU-Next
     runs-on: ubuntu-24.04
+    outputs:
+      build_tag: ${{ steps.package.outputs.build_tag }}
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Install build dependencies
         run: |
@@ -98,13 +116,18 @@ jobs:
           clone_ref https://github.com/LineageOS/android_kernel_samsung_sm8250.git \
             "${{ inputs.kernel_branch || 'lineage-24.0' }}" "${WORK}/kernel" true
           # Keep full history and tags for KernelSU-Next so Kbuild computes KSU_VERSION cleanly.
+          KSU_REF="${{ inputs.ksu_ref || env.KSU_DEFAULT_REF }}"
           clone_ref https://github.com/KernelSU-Next/KernelSU-Next.git \
-            "${{ inputs.ksu_ref || 'legacy' }}" "${WORK}/KernelSU-Next" false
-          echo "KernelSU-Next HEAD: $(git -C "${WORK}/KernelSU-Next" rev-parse HEAD) (commits=$(git -C "${WORK}/KernelSU-Next" rev-list --count HEAD))"
+            "${KSU_REF}" "${WORK}/KernelSU-Next" false
+          KSU_HEAD="$(git -C "${WORK}/KernelSU-Next" rev-parse HEAD)"
+          echo "KernelSU-Next HEAD: ${KSU_HEAD} (commits=$(git -C "${WORK}/KernelSU-Next" rev-list --count HEAD))"
+          if [[ "${KSU_REF}" =~ ^[0-9a-f]{40}$ ]] && [ "${KSU_HEAD}" != "${KSU_REF}" ]; then
+            echo "::error::KernelSU-Next HEAD ${KSU_HEAD} != pinned ${KSU_REF}"; exit 1
+          fi
 
-          git clone --depth=1 \
-            https://github.com/osm0sis/AnyKernel3.git \
-            "${WORK}/AnyKernel3"
+          clone_ref https://github.com/osm0sis/AnyKernel3.git \
+            "${AK3_COMMIT}" "${WORK}/AnyKernel3" true
+          test "$(git -C "${WORK}/AnyKernel3" rev-parse HEAD)" = "${AK3_COMMIT}"
 
           if [ "${{ github.event_name != 'workflow_dispatch' || inputs.repack_boot_img == true }}" = "true" ]; then
             git clone --depth=1 --branch lineage-23.0 \
@@ -155,6 +178,7 @@ jobs:
           strings "${WORK}/kernel/out/arch/arm64/boot/Image" | grep -m1 "Linux version"
 
       - name: Package AnyKernel3 flashable zip
+        id: package
         run: |
           DIST="${WORK}/dist"
           mkdir -p "${DIST}"
@@ -163,6 +187,7 @@ jobs:
           BUILD_DATE="$(date -u +%Y%m%d)"
           TAG="lineage24-${BUILD_DATE}-k${KVER}-ksu${KSU_VER}"
           echo "BUILD_TAG=${TAG}" >> "$GITHUB_ENV"
+          echo "build_tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "DIST=${DIST}" >> "$GITHUB_ENV"
 
           AK3="${WORK}/ak3-stage"
@@ -210,33 +235,14 @@ jobs:
           echo "Repacked boot image size: ${BOOT_SIZE} bytes (partition max: 71303168)"
           test "${BOOT_SIZE}" -le 71303168
 
-      - name: Fetch matching KernelSU-Next manager APK
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Fetch pinned KernelSU-Next manager APK (SHA-256 verified)
         run: |
-          # Bundle the standard release manager APK alongside the kernel zips. If the
-          # app reports "unsupported" for the compiled legacy driver version, install
-          # the manager matching the KernelSU-Next commit printed in the build log.
-          REL_JSON="${WORK}/ksu_latest_release.json"
+          # Pinned release + checksum taken from the GitHub release asset digest.
+          # A mismatching download fails the build instead of shipping an unknown APK.
           curl -fsSL \
-            -H "Authorization: Bearer ${GH_TOKEN}" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/KernelSU-Next/KernelSU-Next/releases/latest" \
-            -o "${REL_JSON}"
-
-          APK_URL="$(jq -r '
-            [.assets[] | select((.name | endswith(".apk")) and (.name | contains("spoofed") | not))][0].browser_download_url
-            // [.assets[] | select(.name | endswith(".apk"))][0].browser_download_url
-            // empty
-          ' "${REL_JSON}")"
-          if [ -n "${APK_URL}" ]; then
-            curl -fsSL "${APK_URL}" -o "${DIST}/$(basename "${APK_URL}")"
-            echo "Bundled manager APK: $(basename "${APK_URL}")"
-          else
-            echo "Could not resolve a manager APK automatically."
-            echo "Install it manually from https://github.com/KernelSU-Next/KernelSU-Next/releases"
-          fi
+            "https://github.com/KernelSU-Next/KernelSU-Next/releases/download/${KSU_MANAGER_TAG}/${KSU_MANAGER_APK}" \
+            -o "${DIST}/${KSU_MANAGER_APK}"
+          echo "${KSU_MANAGER_SHA256}  ${DIST}/${KSU_MANAGER_APK}" | sha256sum -c -
 
       - name: Generate SHA-256 checksums
         run: |
@@ -244,19 +250,38 @@ jobs:
           cat "${DIST}/SHA256SUMS.txt"
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: gts7lwifi-ksunext-${{ env.BUILD_TAG }}
           path: ${{ env.DIST }}/*
 
-      - name: Publish GitHub Release (optional)
-        if: inputs.create_release == true
-        uses: softprops/action-gh-release@v2
+  release:
+    name: Publish GitHub Release (optional)
+    needs: build
+    if: inputs.create_release == true
+    runs-on: ubuntu-24.04
+    # Only this job may write to the repository (tags/releases).
+    permissions:
+      contents: write
+    env:
+      BUILD_TAG: ${{ needs.build.outputs.build_tag }}
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: gts7lwifi-ksunext-${{ needs.build.outputs.build_tag }}
+          path: dist
+
+      - name: Verify checksums before publishing
+        run: cd dist && sha256sum -c SHA256SUMS.txt
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: v-${{ env.BUILD_TAG }}
           name: "gts7lwifi LineageOS 24.0 + KernelSU-Next (${{ env.BUILD_TAG }})"
           body: |
             Compiled on Ubuntu 24.04 using AOSP Clang r596125 (`clang-22`),
             `LineageOS/android_kernel_samsung_sm8250` (`${{ inputs.kernel_branch || 'lineage-24.0' }}`),
-            and `KernelSU-Next` (`${{ inputs.ksu_ref || 'legacy' }}`, `CONFIG_KSU_MANUAL_HOOK=y`).
-          files: ${{ env.DIST }}/*
+            and `KernelSU-Next` (`${{ inputs.ksu_ref || env.KSU_DEFAULT_REF }}`, `CONFIG_KSU_MANUAL_HOOK=y`).
+          files: dist/*
