@@ -1,0 +1,256 @@
+name: Build LineageOS 24 KernelSU-Next (SM-T870 / gts7lwifi)
+
+on:
+  workflow_dispatch:
+    inputs:
+      kernel_branch:
+        description: "LineageOS/android_kernel_samsung_sm8250 branch or commit"
+        required: true
+        default: "lineage-24.0"
+        type: string
+      ksu_ref:
+        description: "KernelSU-Next branch/tag (use legacy for 4.19 non-GKI kernels)"
+        required: true
+        default: "legacy"
+        type: string
+      repack_boot_img:
+        description: "Also repack latest official LineageOS 24.0 boot.img with the compiled kernel"
+        required: true
+        default: true
+        type: boolean
+      create_release:
+        description: "Publish artifacts as a GitHub Release on completion"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build gts7lwifi LineageOS 24.0 + KernelSU-Next
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            bc \
+            bison \
+            build-essential \
+            ca-certificates \
+            cpio \
+            curl \
+            flex \
+            gcc-aarch64-linux-gnu \
+            git \
+            jq \
+            kmod \
+            libelf-dev \
+            libssl-dev \
+            libxml2 \
+            lz4 \
+            python3 \
+            rsync \
+            tar \
+            xz-utils \
+            zip
+
+      - name: Download AOSP Clang r596125 (Clang 22.0.2)
+        run: |
+          WORK="${RUNNER_TEMP}/build"
+          mkdir -p "${WORK}/clang"
+          curl -fsSL \
+            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/tags/android-17.0.0_r1/clang-r596125.tar.gz" \
+            | tar -xz -C "${WORK}/clang"
+          test -x "${WORK}/clang/bin/clang"
+          "${WORK}/clang/bin/clang" --version
+          echo "WORK=${WORK}" >> "$GITHUB_ENV"
+
+      - name: Clone kernel, KernelSU-Next, AnyKernel3, and mkbootimg
+        run: |
+          clone_ref() {
+            local url="$1" ref="$2" dest="$3" shallow="${4:-true}"
+            local depth_args=()
+            if [ "${shallow}" = "true" ]; then
+              depth_args=(--depth=1)
+            fi
+            if ! git clone "${depth_args[@]}" --branch "${ref}" "${url}" "${dest}" 2>/dev/null; then
+              rm -rf "${dest}"
+              git init "${dest}"
+              git -C "${dest}" remote add origin "${url}"
+              git -C "${dest}" fetch "${depth_args[@]}" --tags origin "${ref}"
+              git -C "${dest}" checkout FETCH_HEAD
+            fi
+          }
+
+          clone_ref https://github.com/LineageOS/android_kernel_samsung_sm8250.git \
+            "${{ inputs.kernel_branch }}" "${WORK}/kernel" true
+          # Keep full history and tags for KernelSU-Next so Kbuild computes KSU_VERSION cleanly.
+          clone_ref https://github.com/KernelSU-Next/KernelSU-Next.git \
+            "${{ inputs.ksu_ref }}" "${WORK}/KernelSU-Next" false
+          echo "KernelSU-Next HEAD: $(git -C "${WORK}/KernelSU-Next" rev-parse HEAD) (commits=$(git -C "${WORK}/KernelSU-Next" rev-list --count HEAD))"
+
+          git clone --depth=1 \
+            https://github.com/osm0sis/AnyKernel3.git \
+            "${WORK}/AnyKernel3"
+
+          if [ "${{ inputs.repack_boot_img }}" = "true" ]; then
+            git clone --depth=1 --branch lineage-23.0 \
+              https://github.com/LineageOS/android_system_tools_mkbootimg.git \
+              "${WORK}/mkbootimg"
+          fi
+
+      - name: Integrate KernelSU-Next and manual hooks
+        run: |
+          python3 "${GITHUB_WORKSPACE}/ksunext-gts7lwifi/apply_ksu_hooks.py" \
+            --kernel-dir "${WORK}/kernel" \
+            --ksu-dir "${WORK}/KernelSU-Next"
+          cp "${GITHUB_WORKSPACE}/ksunext-gts7lwifi/ksu.config" \
+            "${WORK}/kernel/arch/arm64/configs/vendor/ksu.config"
+
+      - name: Configure and compile kernel (gts7lwifi)
+        run: |
+          export PATH="${WORK}/clang/bin:${PATH}"
+          MAKE_ARGS=(
+            O=out
+            ARCH=arm64
+            SUBARCH=arm64
+            LLVM=1
+            LLVM_IAS=1
+            CROSS_COMPILE=aarch64-linux-gnu-
+            CLANG_TRIPLE=aarch64-linux-gnu-
+            # A 4.19 tree compiled with modern Clang (r596125/clang-22) emits new
+            # warnings; CONFIG_CC_WERROR=y would fail on unrelated legacy code.
+            KCFLAGS=-Wno-error
+          )
+
+          make -C "${WORK}/kernel" "${MAKE_ARGS[@]}" \
+            vendor/kona-perf_defconfig \
+            vendor/samsung/kona-sec-common.config \
+            vendor/samsung/gts7lwifi.config \
+            vendor/ksu.config
+
+          # Fail fast before compiling if key config flags did not stick
+          grep -qx "CONFIG_KSU=y" "${WORK}/kernel/out/.config"
+          grep -qx "CONFIG_KSU_MANUAL_HOOK=y" "${WORK}/kernel/out/.config"
+          grep -qx "CONFIG_CFI_CLANG=y" "${WORK}/kernel/out/.config"
+          grep -qx "CONFIG_OVERLAY_FS=y" "${WORK}/kernel/out/.config"
+          ! grep -q "^CONFIG_KSU_KPROBES_HOOK=" "${WORK}/kernel/out/.config"
+          ! grep -q "^CONFIG_KSU_SYSCALL_TABLE_HOOK=" "${WORK}/kernel/out/.config"
+
+          make -C "${WORK}/kernel" -j"$(nproc)" "${MAKE_ARGS[@]}" Image
+          test -s "${WORK}/kernel/out/arch/arm64/boot/Image"
+          strings "${WORK}/kernel/out/arch/arm64/boot/Image" | grep -m1 "Linux version"
+
+      - name: Package AnyKernel3 flashable zip
+        run: |
+          DIST="${WORK}/dist"
+          mkdir -p "${DIST}"
+          KVER="$(git -C "${WORK}/kernel" rev-parse --short=8 HEAD)"
+          KSU_VER="$(git -C "${WORK}/KernelSU-Next" rev-parse --short=8 HEAD)"
+          BUILD_DATE="$(date -u +%Y%m%d)"
+          TAG="lineage24-${BUILD_DATE}-k${KVER}-ksu${KSU_VER}"
+          echo "BUILD_TAG=${TAG}" >> "$GITHUB_ENV"
+          echo "DIST=${DIST}" >> "$GITHUB_ENV"
+
+          AK3="${WORK}/ak3-stage"
+          mkdir -p "${AK3}"
+          cp -r "${WORK}/AnyKernel3/META-INF" "${WORK}/AnyKernel3/tools" "${WORK}/AnyKernel3/LICENSE" "${AK3}/"
+          cp "${GITHUB_WORKSPACE}/ksunext-gts7lwifi/anykernel.sh" "${AK3}/anykernel.sh"
+          chmod +x "${AK3}/anykernel.sh"
+          cp "${WORK}/kernel/out/arch/arm64/boot/Image" "${AK3}/Image"
+
+          (cd "${AK3}" && zip -r9 "${DIST}/KernelSU-Next-gts7lwifi-${TAG}-ak3.zip" .)
+          cp "${WORK}/kernel/out/arch/arm64/boot/Image" "${DIST}/Image-gts7lwifi-${TAG}"
+
+      - name: Repack latest official LineageOS 24.0 boot.img (optional)
+        if: inputs.repack_boot_img == true
+        run: |
+          API_JSON="${WORK}/los_builds.json"
+          curl -fsSL "https://download.lineageos.org/api/v2/devices/gts7lwifi/builds" -o "${API_JSON}"
+
+          BOOT_URL="$(jq -r '[.[] | select(.version=="24.0")][0].files[] | select(.filename=="boot.img") | .url' "${API_JSON}")"
+          BOOT_SHA="$(jq -r '[.[] | select(.version=="24.0")][0].files[] | select(.filename=="boot.img") | .sha256' "${API_JSON}")"
+          LOS_DATE="$(jq -r '[.[] | select(.version=="24.0")][0].date' "${API_JSON}")"
+
+          if [ -z "${BOOT_URL}" ] || [ "${BOOT_URL}" = "null" ]; then
+            echo "No LineageOS 24.0 boot.img found via API; skipping repack."
+            exit 0
+          fi
+
+          curl -fsSL "${BOOT_URL}" -o "${WORK}/official-boot.img"
+          echo "${BOOT_SHA}  ${WORK}/official-boot.img" | sha256sum -c -
+
+          mkdir -p "${WORK}/unpacked_boot"
+          declare -a MKBOOTIMG_ARGS=()
+          while IFS= read -r -d '' ARG; do
+            MKBOOTIMG_ARGS+=("${ARG}")
+          done < <(python3 "${WORK}/mkbootimg/unpack_bootimg.py" \
+            --boot_img "${WORK}/official-boot.img" \
+            --out "${WORK}/unpacked_boot" \
+            --format=mkbootimg -0)
+
+          cp "${WORK}/kernel/out/arch/arm64/boot/Image" "${WORK}/unpacked_boot/kernel"
+          OUT_BOOT="${DIST}/boot-lineage24-${LOS_DATE}-gts7lwifi-ksunext.img"
+          python3 "${WORK}/mkbootimg/mkbootimg.py" "${MKBOOTIMG_ARGS[@]}" --output "${OUT_BOOT}"
+
+          BOOT_SIZE="$(stat -c%s "${OUT_BOOT}")"
+          echo "Repacked boot image size: ${BOOT_SIZE} bytes (partition max: 71303168)"
+          test "${BOOT_SIZE}" -le 71303168
+
+      - name: Fetch matching KernelSU-Next manager APK
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Bundle the standard release manager APK alongside the kernel zips. If the
+          # app reports "unsupported" for the compiled legacy driver version, install
+          # the manager matching the KernelSU-Next commit printed in the build log.
+          REL_JSON="${WORK}/ksu_latest_release.json"
+          curl -fsSL \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/KernelSU-Next/KernelSU-Next/releases/latest" \
+            -o "${REL_JSON}"
+
+          APK_URL="$(jq -r '
+            [.assets[] | select((.name | endswith(".apk")) and (.name | contains("spoofed") | not))][0].browser_download_url
+            // [.assets[] | select(.name | endswith(".apk"))][0].browser_download_url
+            // empty
+          ' "${REL_JSON}")"
+          if [ -n "${APK_URL}" ]; then
+            curl -fsSL "${APK_URL}" -o "${DIST}/$(basename "${APK_URL}")"
+            echo "Bundled manager APK: $(basename "${APK_URL}")"
+          else
+            echo "Could not resolve a manager APK automatically."
+            echo "Install it manually from https://github.com/KernelSU-Next/KernelSU-Next/releases"
+          fi
+
+      - name: Generate SHA-256 checksums
+        run: |
+          (cd "${DIST}" && sha256sum * > SHA256SUMS.txt)
+          cat "${DIST}/SHA256SUMS.txt"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: gts7lwifi-ksunext-${{ env.BUILD_TAG }}
+          path: ${{ env.DIST }}/*
+
+      - name: Publish GitHub Release (optional)
+        if: inputs.create_release == true
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v-${{ env.BUILD_TAG }}
+          name: "gts7lwifi LineageOS 24.0 + KernelSU-Next (${{ env.BUILD_TAG }})"
+          body: |
+            Compiled on Ubuntu 24.04 using AOSP Clang r596125 (`clang-22`),
+            `LineageOS/android_kernel_samsung_sm8250` (`${{ inputs.kernel_branch }}`),
+            and `KernelSU-Next` (`${{ inputs.ksu_ref }}`, `CONFIG_KSU_MANUAL_HOOK=y`).
+          files: ${{ env.DIST }}/*

@@ -1,0 +1,13 @@
+# Downloaded ROM images and archives (exceed GitHub file size limits)
+*.zip
+*.img
+*.tar
+*.tar.md5
+*.gz
+*.xz
+
+# Local build directories
+out/
+work/
+__pycache__/
+*.pyc
