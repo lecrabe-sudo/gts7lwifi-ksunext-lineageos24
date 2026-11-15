@@ -254,6 +254,82 @@ def apply_manual_hooks(kernel_dir: Path) -> None:
         apply_rules(kernel_dir / rel_path, rules)
 
 
+def apply_prebuild_backports(kernel_dir: Path) -> None:
+    """Apply KSU-Next 4.19 backports before make starts so parallel builds never race."""
+    backports: dict[str, list[InsertionRule]] = {
+        "fs/namespace.c": [
+            InsertionRule(
+                marker="static int can_umount(const struct path *path, int flags)",
+                anchor="static bool is_mnt_ns_file(struct dentry *dentry)",
+                replacement=(
+                    "static int can_umount(const struct path *path, int flags)\n"
+                    "{\n"
+                    "\tstruct mount *mnt = real_mount(path->mnt);\n\n"
+                    "\tif (flags & ~(MNT_FORCE | MNT_DETACH | MNT_EXPIRE | UMOUNT_NOFOLLOW))\n"
+                    "\t\treturn -EINVAL;\n"
+                    "\tif (!may_mount())\n"
+                    "\t\treturn -EPERM;\n"
+                    "\tif (path->dentry != path->mnt->mnt_root)\n"
+                    "\t\treturn -EINVAL;\n"
+                    "\tif (!check_mnt(mnt))\n"
+                    "\t\treturn -EINVAL;\n"
+                    "\tif (mnt->mnt.mnt_flags & MNT_LOCKED) /* Check optimistically */\n"
+                    "\t\treturn -EINVAL;\n"
+                    "\tif (flags & MNT_FORCE && !capable(CAP_SYS_ADMIN))\n"
+                    "\t\treturn -EPERM;\n"
+                    "\treturn 0;\n"
+                    "}\n\n"
+                    "static bool is_mnt_ns_file(struct dentry *dentry)"
+                ),
+            ),
+            InsertionRule(
+                marker="int path_umount(struct path *path, int flags)",
+                anchor="static bool is_mnt_ns_file(struct dentry *dentry)",
+                replacement=(
+                    "int path_umount(struct path *path, int flags)\n"
+                    "{\n"
+                    "\tstruct mount *mnt = real_mount(path->mnt);\n"
+                    "\tint ret;\n\n"
+                    "\tret = can_umount(path, flags);\n"
+                    "\tif (!ret)\n"
+                    "\t\tret = do_umount(mnt, flags);\n\n"
+                    "\t/* we mustn't call path_put() as that would clear mnt_expiry_mark */\n"
+                    "\tdput(path->dentry);\n"
+                    "\tmntput_no_expire(mnt);\n"
+                    "\treturn ret;\n"
+                    "}\n\n"
+                    "static bool is_mnt_ns_file(struct dentry *dentry)"
+                ),
+            ),
+        ],
+        "fs/internal.h": [
+            InsertionRule(
+                marker="int path_umount(struct path *path, int flags);",
+                anchor="extern void __init mnt_init(void);",
+                replacement=(
+                    "extern void __init mnt_init(void);\n"
+                    "int path_umount(struct path *path, int flags);"
+                ),
+            ),
+        ],
+        "include/linux/seccomp.h": [
+            InsertionRule(
+                marker="#include <linux/atomic.h>",
+                anchor="#include <linux/thread_info.h>",
+                replacement="#include <linux/thread_info.h>\n#include <linux/atomic.h>",
+            ),
+            InsertionRule(
+                marker="atomic_t filter_count;",
+                anchor="struct seccomp {\n\tint mode;",
+                replacement="struct seccomp {\n\tint mode;\n\tatomic_t filter_count;",
+            ),
+        ],
+    }
+
+    for rel_path, rules in backports.items():
+        apply_rules(kernel_dir / rel_path, rules)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--kernel-dir", type=Path, required=True)
@@ -271,7 +347,8 @@ def main() -> None:
         setup_kernelsu_tree(args.kernel_dir, args.ksu_dir)
 
     apply_manual_hooks(args.kernel_dir)
-    print("Successfully applied KernelSU-Next integration and manual hooks.")
+    apply_prebuild_backports(args.kernel_dir)
+    print("Successfully applied KernelSU-Next integration, backports, and manual hooks.")
 
 
 if __name__ == "__main__":
